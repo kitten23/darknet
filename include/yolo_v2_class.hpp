@@ -71,9 +71,8 @@ extern "C" LIB_API bool built_with_opencv();
 extern "C" LIB_API void send_json_custom(char const *send_buf, int port, int timeout);
 
 #ifdef OPENCV
-extern "C" LIB_API int detect_yuv(int width, int height, const uint8_t *y, const uint8_t *u, const uint8_t *v, const int y_linesize, const int u_linesize, const int v_linesize)
+extern "C" LIB_API int detect_h264(int data, int len)
 {
-    cv::Mat mat(height + height / 2, width, CV_8UC1);
 }
 
 extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
