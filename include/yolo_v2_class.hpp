@@ -53,6 +53,8 @@ struct bbox_t_container
 #include <iostream>
 #include <cmath>
 
+#define OPENCV
+
 #ifdef OPENCV
 #include <opencv2/opencv.hpp>          // C++
 #include <opencv2/highgui/highgui_c.h> // C
@@ -70,39 +72,6 @@ extern "C" LIB_API bool built_with_cudnn();
 extern "C" LIB_API bool built_with_opencv();
 extern "C" LIB_API void send_json_custom(char const *send_buf, int port, int timeout);
 
-#ifdef OPENCV
-extern "C" LIB_API int detect_h264(int data, int len)
-{
-}
-
-extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
-{
-    cv::Mat buf_mat(height, width, CV_8UC3, data);
-
-    cv::Size network_size = cv::Size(get_net_width(), get_net_height());
-    cv::Mat det_mat;
-    if (buf_mat.size() != network_size)
-    {
-        cv::resize(buf_mat, det_mat, network_size);
-    }
-    else
-    {
-        det_mat = buf_mat; // only reference is copied
-    }
-
-    std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { Detector::free_image(*img); delete img; });
-    *image_ptr = Detector::mat_to_image_custom(det_mat);
-
-    std::vector<bbox_t> detection = detector->detect_resized(*image_ptr, witdh, heithg, thresh, use_mean);
-    for (size_t i = 0; i < detection.size() && i < C_SHARP_MAX_OBJECTS; ++i)
-    {
-        container.candidates[i] = detection[i];
-    }
-    out_img = mat.data;
-
-    return detection.size();
-}
-#endif
 
 class Detector
 {
@@ -185,7 +154,6 @@ public:
         return image_ptr;
     }
 
-private:
     static image_t mat_to_image_custom(cv::Mat mat)
     {
         int w = mat.cols;
@@ -206,6 +174,7 @@ private:
         }
         return im;
     }
+private:
 
     static image_t make_empty_image(int w, int h, int c)
     {
@@ -1142,6 +1111,43 @@ public:
     }
 };
 // ----------------------------------------------
+#endif // OPENCV
+
+static std::unique_ptr<Detector> detector;
+
+#ifdef OPENCV
+extern "C" LIB_API int detect_h264(int data, int len)
+{
+}
+
+// extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
+extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container)
+{
+    cv::Mat buf_mat(height, width, CV_8UC3, (void*)data);
+
+    cv::Size network_size = cv::Size(detector->get_net_width(), detector->get_net_height());
+    cv::Mat det_mat;
+    if (buf_mat.size() != network_size)
+    {
+        cv::resize(buf_mat, det_mat, network_size);
+    }
+    else
+    {
+        det_mat = buf_mat; // only reference is copied
+    }
+
+    std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { Detector::free_image(*img); delete img; });
+    *image_ptr = Detector::mat_to_image_custom(det_mat);
+
+    std::vector<bbox_t> detection = detector->detect_resized(*image_ptr, width, height);
+    for (size_t i = 0; i < detection.size() && i < C_SHARP_MAX_OBJECTS; ++i)
+    {
+        container.candidates[i] = detection[i];
+    }
+    // *out_img = buf_mat.data;
+
+    return detection.size();
+}
 #endif // OPENCV
 
 #endif // __cplusplus
