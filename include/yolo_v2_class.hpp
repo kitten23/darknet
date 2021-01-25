@@ -1319,9 +1319,9 @@ int detect_img_data(int width, int height, const uint8_t *data, int stride, bbox
 }
 
 // extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
-extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container)
+extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, int stride, bbox_t_container &container)
 {
-    return detect_img_data(width, height, data, width, container, Bgr);
+    return detect_img_data(width, height, data, stride, container, Bgr);
 }
 
 extern "C" LIB_API int detect_rgb(int width, int height, const uint8_t *data, int stride, bbox_t_container &container)
