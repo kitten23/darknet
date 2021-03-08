@@ -42,6 +42,11 @@ struct bbox_t_container
     bbox_t candidates[C_SHARP_MAX_OBJECTS];
 };
 
+struct ObjInfo
+{
+    int id;
+};
+
 #ifdef __cplusplus
 #include <memory>
 #include <vector>
@@ -52,6 +57,8 @@ struct bbox_t_container
 #include <sstream>
 #include <iostream>
 #include <cmath>
+
+#define OPENCV
 
 #ifdef OPENCV
 #include <opencv2/opencv.hpp>          // C++
@@ -69,40 +76,6 @@ extern "C" LIB_API bool built_with_cuda();
 extern "C" LIB_API bool built_with_cudnn();
 extern "C" LIB_API bool built_with_opencv();
 extern "C" LIB_API void send_json_custom(char const *send_buf, int port, int timeout);
-
-#ifdef OPENCV
-extern "C" LIB_API int detect_h264(int data, int len)
-{
-}
-
-extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
-{
-    cv::Mat buf_mat(height, width, CV_8UC3, data);
-
-    cv::Size network_size = cv::Size(get_net_width(), get_net_height());
-    cv::Mat det_mat;
-    if (buf_mat.size() != network_size)
-    {
-        cv::resize(buf_mat, det_mat, network_size);
-    }
-    else
-    {
-        det_mat = buf_mat; // only reference is copied
-    }
-
-    std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { Detector::free_image(*img); delete img; });
-    *image_ptr = Detector::mat_to_image_custom(det_mat);
-
-    std::vector<bbox_t> detection = detector->detect_resized(*image_ptr, witdh, heithg, thresh, use_mean);
-    for (size_t i = 0; i < detection.size() && i < C_SHARP_MAX_OBJECTS; ++i)
-    {
-        container.candidates[i] = detection[i];
-    }
-    out_img = mat.data;
-
-    return detection.size();
-}
-#endif
 
 class Detector
 {
@@ -185,7 +158,6 @@ public:
         return image_ptr;
     }
 
-private:
     static image_t mat_to_image_custom(cv::Mat mat)
     {
         int w = mat.cols;
@@ -207,6 +179,71 @@ private:
         return im;
     }
 
+    static image_t mat_to_image_custom_bgr(cv::Mat mat)
+    {
+        int w = mat.cols;
+        int h = mat.rows;
+        int c = mat.channels();
+        int step = mat.step;
+        int gap = (step - w * c);
+
+        // std::cout << "mat_to_image_custom_bgr w=" << w << " h=" << h << " c=" << c << " step=" << step << " gap=" << gap << std::endl;
+
+        image_t im = make_image_custom(w, h, c);
+        auto data = mat.data;
+        int src_idx = 0;
+
+        int dst_idx_b = 0;
+        int dst_idx_g = w * h;
+        int dst_idx_r = dst_idx_g * 2;
+
+        for (size_t src_idx_h = 0; src_idx_h < h; src_idx_h++)
+        {
+            for (size_t src_idx_w = 0; src_idx_w < w; src_idx_w++)
+            {
+                im.data[dst_idx_b++] = data[src_idx++] / 255.0f;
+                im.data[dst_idx_g++] = data[src_idx++] / 255.0f;
+                im.data[dst_idx_r++] = data[src_idx++] / 255.0f;
+            }
+
+            src_idx += gap;
+        }
+
+        return im;
+    }
+
+    static image_t mat_to_image_custom_rgb(cv::Mat mat)
+    {
+        int w = mat.cols;
+        int h = mat.rows;
+        int c = mat.channels();
+        int step = mat.step;
+        int gap = (step - w * c);
+
+        image_t im = make_image_custom(w, h, c);
+        auto data = mat.data;
+        int src_idx = 0;
+
+        int dst_idx_b = 0;
+        int dst_idx_g = w * h;
+        int dst_idx_r = dst_idx_g * 2;
+
+        for (size_t src_idx_h = 0; src_idx_h < h; src_idx_h++)
+        {
+            for (size_t src_idx_w = 0; src_idx_w < w; src_idx_w++)
+            {
+                im.data[dst_idx_r++] = data[src_idx++] / 255.0f;
+                im.data[dst_idx_g++] = data[src_idx++] / 255.0f;
+                im.data[dst_idx_b++] = data[src_idx++] / 255.0f;
+            }
+
+            src_idx += gap;
+        }
+
+        return im;
+    }
+
+private:
     static image_t make_empty_image(int w, int h, int c)
     {
         image_t out;
@@ -1142,6 +1179,235 @@ public:
     }
 };
 // ----------------------------------------------
+#endif // OPENCV
+
+static std::unique_ptr<Detector> detector;
+
+#ifdef OPENCV
+struct ColorInfo
+{
+    std::string name;
+    cv::Scalar color_bgr;
+    cv::Scalar color_rgb;
+};
+
+static ColorInfo color_info[80]{
+    {"0", cv::Scalar(0), cv::Scalar(0)},
+    {"1", cv::Scalar(0), cv::Scalar(0)},
+    {"2", cv::Scalar(0), cv::Scalar(0)},
+    {"3", cv::Scalar(0), cv::Scalar(0)},
+    {"4", cv::Scalar(0), cv::Scalar(0)},
+    {"5", cv::Scalar(0), cv::Scalar(0)},
+    {"6", cv::Scalar(0), cv::Scalar(0)},
+    {"7", cv::Scalar(0), cv::Scalar(0)},
+    {"8", cv::Scalar(0), cv::Scalar(0)},
+    {"9", cv::Scalar(0), cv::Scalar(0)},
+    {"10", cv::Scalar(0), cv::Scalar(0)},
+    {"11", cv::Scalar(0), cv::Scalar(0)},
+    {"12", cv::Scalar(0), cv::Scalar(0)},
+    {"13", cv::Scalar(0), cv::Scalar(0)},
+    {"14", cv::Scalar(0), cv::Scalar(0)},
+    {"15", cv::Scalar(0), cv::Scalar(0)},
+    {"16", cv::Scalar(0), cv::Scalar(0)},
+    {"17", cv::Scalar(0), cv::Scalar(0)},
+    {"18", cv::Scalar(0), cv::Scalar(0)},
+    {"19", cv::Scalar(0), cv::Scalar(0)},
+    {"20", cv::Scalar(0), cv::Scalar(0)},
+    {"21", cv::Scalar(0), cv::Scalar(0)},
+    {"22", cv::Scalar(0), cv::Scalar(0)},
+    {"23", cv::Scalar(0), cv::Scalar(0)},
+    {"24", cv::Scalar(0), cv::Scalar(0)},
+    {"25", cv::Scalar(0), cv::Scalar(0)},
+    {"26", cv::Scalar(0), cv::Scalar(0)},
+    {"27", cv::Scalar(0), cv::Scalar(0)},
+    {"28", cv::Scalar(0), cv::Scalar(0)},
+    {"29", cv::Scalar(0), cv::Scalar(0)},
+    {"30", cv::Scalar(0), cv::Scalar(0)},
+    {"31", cv::Scalar(0), cv::Scalar(0)},
+    {"32", cv::Scalar(0), cv::Scalar(0)},
+    {"33", cv::Scalar(0), cv::Scalar(0)},
+    {"34", cv::Scalar(0), cv::Scalar(0)},
+    {"35", cv::Scalar(0), cv::Scalar(0)},
+    {"36", cv::Scalar(0), cv::Scalar(0)},
+    {"37", cv::Scalar(0), cv::Scalar(0)},
+    {"38", cv::Scalar(0), cv::Scalar(0)},
+    {"39", cv::Scalar(0), cv::Scalar(0)},
+    {"40", cv::Scalar(0), cv::Scalar(0)},
+    {"41", cv::Scalar(0), cv::Scalar(0)},
+    {"42", cv::Scalar(0), cv::Scalar(0)},
+    {"43", cv::Scalar(0), cv::Scalar(0)},
+    {"44", cv::Scalar(0), cv::Scalar(0)},
+    {"45", cv::Scalar(0), cv::Scalar(0)},
+    {"46", cv::Scalar(0), cv::Scalar(0)},
+    {"47", cv::Scalar(0), cv::Scalar(0)},
+    {"48", cv::Scalar(0), cv::Scalar(0)},
+    {"49", cv::Scalar(0), cv::Scalar(0)},
+    {"50", cv::Scalar(0), cv::Scalar(0)},
+    {"51", cv::Scalar(0), cv::Scalar(0)},
+    {"52", cv::Scalar(0), cv::Scalar(0)},
+    {"53", cv::Scalar(0), cv::Scalar(0)},
+    {"54", cv::Scalar(0), cv::Scalar(0)},
+    {"55", cv::Scalar(0), cv::Scalar(0)},
+    {"56", cv::Scalar(0), cv::Scalar(0)},
+    {"57", cv::Scalar(0), cv::Scalar(0)},
+    {"58", cv::Scalar(0), cv::Scalar(0)},
+    {"59", cv::Scalar(0), cv::Scalar(0)},
+    {"60", cv::Scalar(0), cv::Scalar(0)},
+    {"61", cv::Scalar(0), cv::Scalar(0)},
+    {"62", cv::Scalar(0), cv::Scalar(0)},
+    {"63", cv::Scalar(0), cv::Scalar(0)},
+    {"64", cv::Scalar(0), cv::Scalar(0)},
+    {"65", cv::Scalar(0), cv::Scalar(0)},
+    {"66", cv::Scalar(0), cv::Scalar(0)},
+    {"67", cv::Scalar(0), cv::Scalar(0)},
+    {"68", cv::Scalar(0), cv::Scalar(0)},
+    {"69", cv::Scalar(0), cv::Scalar(0)},
+    {"70", cv::Scalar(0), cv::Scalar(0)},
+    {"71", cv::Scalar(0), cv::Scalar(0)},
+    {"72", cv::Scalar(0), cv::Scalar(0)},
+    {"73", cv::Scalar(0), cv::Scalar(0)},
+    {"74", cv::Scalar(0), cv::Scalar(0)},
+    {"75", cv::Scalar(0), cv::Scalar(0)},
+    {"76", cv::Scalar(0), cv::Scalar(0)},
+    {"77", cv::Scalar(0), cv::Scalar(0)},
+    {"78", cv::Scalar(0), cv::Scalar(0)},
+    {"79", cv::Scalar(0), cv::Scalar(0)},
+};
+
+struct ColorInfoValue
+{
+    char *name;
+    int color;
+};
+
+extern "C" LIB_API int detect_h264(int data, int len)
+{
+}
+
+enum ImgDataType
+{
+    Bgr,
+    Rgb,
+};
+
+void draw_box(cv::Mat mat, bbox_t d, ImgDataType type, ObjInfo *info, int info_len, float prob)
+{
+    if (d.prob < prob)
+    {
+        return;
+    }
+
+    if (info_len > 0)
+    {
+        bool is_id_exist = false;
+        for (size_t i = 0; i < info_len; i++)
+        {
+            if (info[i].id == d.obj_id)
+            {
+                is_id_exist = true;
+                break;
+            }
+        }
+
+        if (!is_id_exist)
+        {
+            return;
+        }
+    }
+
+    auto c_info = color_info[d.obj_id];
+    auto color = type == Rgb ? c_info.color_rgb : c_info.color_bgr;
+    cv::rectangle(mat, cv::Rect(d.x, d.y, d.w, d.h), color, 1);
+    // auto txt_size = cv::getTextSize(c_info.name, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1);
+    cv::putText(mat, c_info.name, cv::Point(d.x, d.y + 12), cv::FONT_HERSHEY_SIMPLEX, 0.5, color, 1);
+}
+
+int detect_img_data(int width, int height, const uint8_t *data, int stride, bbox_t_container &container, ImgDataType type, ObjInfo *info, int info_len, float prob)
+{
+    // std::cout << "detect_img_data w=" << width << " h=" << height << std::endl;
+    cv::Mat buf_mat(height, width, CV_8UC3, (void *)data);
+    
+    cv::Size network_size = cv::Size(detector->get_net_width(), detector->get_net_height());
+    cv::Mat det_mat;
+    if (buf_mat.size() != network_size)
+    {
+        cv::resize(buf_mat, det_mat, network_size);
+    }
+    else
+    {
+        det_mat = buf_mat; // only reference is copied
+    }
+
+    std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { Detector::free_image(*img); delete img; });
+    *image_ptr = type == Rgb ? Detector::mat_to_image_custom_bgr(det_mat) : Detector::mat_to_image_custom_bgr(det_mat);
+
+    std::vector<bbox_t> detection = detector->detect_resized(*image_ptr, width, height);
+    for (size_t i = 0; i < detection.size() && i < C_SHARP_MAX_OBJECTS; ++i)
+    {
+        auto d = detection[i];
+        container.candidates[i] = d;
+
+        draw_box(buf_mat, d, type, info, info_len, prob);
+    }
+    // std::cout << "detect_img_data size=" << detection.size() << std::endl;
+
+    return detection.size();
+}
+
+// extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, bbox_t_container &container, uint8_t **out_img)
+extern "C" LIB_API int detect_bgr(int width, int height, const uint8_t *data, int stride, bbox_t_container &container, ObjInfo *info, int info_len, float prob)
+{
+    return detect_img_data(width, height, data, stride, container, Bgr, info, info_len, prob);
+}
+
+extern "C" LIB_API int detect_rgb(int width, int height, const uint8_t *data, int stride, bbox_t_container &container, ObjInfo *info, int info_len, float prob)
+{
+    return detect_img_data(width, height, data, width, container, Rgb, info, info_len, prob);
+}
+
+extern "C" LIB_API int draw_bgr(int width, int height, const uint8_t *data, bbox_t_container *container, int size)
+{
+    // std::cout << "draw_bgr w=" << width << " h=" << height << std::endl;
+    cv::Mat buf_mat(height, width, CV_8UC3, (void *)data);
+
+    for (size_t i = 0; i < size && i < C_SHARP_MAX_OBJECTS; ++i)
+    {
+        auto d = container->candidates[i];
+        auto c_info = color_info[d.obj_id];
+
+        cv::rectangle(buf_mat, cv::Rect(d.x, d.y, d.w, d.h), c_info.color_bgr, 1);
+        cv::putText(buf_mat, c_info.name, cv::Point(d.x, d.y + 50), cv::FONT_HERSHEY_SIMPLEX, 0.5, c_info.color_bgr, 1);
+    }
+    // std::cout << "detect_bgr size=" << detection.size() << std::endl;
+
+    return 0;
+}
+
+extern "C" LIB_API int set_color(ColorInfoValue *data, int count)
+{
+    std::cout << "set_color count=" << count << std::endl;
+
+    if (count > 80)
+    {
+        count = 80;
+    }
+
+    for (size_t i = 0; i < count; i++)
+    {
+        auto value = data[i];
+        auto r = (value.color >> 16) & 0xFF;
+        auto g = (value.color >> 8) & 0xFF;
+        auto b = value.color & 0xFF;
+
+        std::cout << "set_color idx=" << i << " name=" << value.name << std::endl;
+
+        color_info[i].name = value.name;
+        color_info[i].color_bgr = cv::Scalar(r, g, b);
+        color_info[i].color_rgb = cv::Scalar(b, g, r);
+    }
+
+    return 0;
+}
 #endif // OPENCV
 
 #endif // __cplusplus

@@ -26,7 +26,6 @@ extern "C"
 #define NFRAMES 3
 
 //static Detector* detector = NULL;
-static std::unique_ptr<Detector> detector;
 
 int init(const char *configurationFilename, const char *weightsFilename, int gpu)
 {
