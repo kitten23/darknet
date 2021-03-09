@@ -1280,10 +1280,6 @@ struct ColorInfoValue
     int color;
 };
 
-extern "C" LIB_API int detect_h264(int data, int len)
-{
-}
-
 enum ImgDataType
 {
     Bgr,
@@ -1326,7 +1322,7 @@ int detect_img_data(int width, int height, const uint8_t *data, int stride, bbox
 {
     // std::cout << "detect_img_data w=" << width << " h=" << height << std::endl;
     cv::Mat buf_mat(height, width, CV_8UC3, (void *)data);
-    
+
     cv::Size network_size = cv::Size(detector->get_net_width(), detector->get_net_height());
     cv::Mat det_mat;
     if (buf_mat.size() != network_size)
@@ -1381,6 +1377,71 @@ extern "C" LIB_API int draw_bgr(int width, int height, const uint8_t *data, bbox
     // std::cout << "detect_bgr size=" << detection.size() << std::endl;
 
     return 0;
+}
+
+/**
+OutInfo
+uint16_t left;
+uint16_t top;
+uint16_t width;
+uint16_t height;
+uint8_t confidence;
+*/
+
+int Person_Id = 0;
+
+extern "C" LIB_API int detect_pedestrian(const uint8_t *img, const int img_len, uint8_t *out_buf, const int out_max_len)
+{
+    cv::Mat src(1, img_len, CV_8UC1, (void *)img);
+    cv::Mat buf_mat = cv::imdecode(src, cv::IMREAD_COLOR);
+    // std::cout << "detect_img w=" << width << " h=" << height << std::endl;
+
+    cv::Size network_size = cv::Size(detector->get_net_width(), detector->get_net_height());
+    cv::Mat det_mat;
+    if (buf_mat.size() != network_size)
+    {
+        cv::resize(buf_mat, det_mat, network_size);
+    }
+    else
+    {
+        det_mat = buf_mat; // only reference is copied
+    }
+
+    std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { Detector::free_image(*img); delete img; });
+    *image_ptr = Detector::mat_to_image_custom_bgr(det_mat);
+
+    std::vector<bbox_t> detection = detector->detect_resized(*image_ptr, buf_mat.cols, buf_mat.rows);
+    ObjInfo info{0};
+    size_t count = 0;
+    out_buf[0] = 42;
+    for (size_t i = 0; i < detection.size() && count < out_max_len; ++i)
+    {
+        auto d = detection[i];
+        out_buf[i] = d.obj_id;
+
+        if (d.obj_id == Person_Id)
+        {
+            memcpy(out_buf, &d.x, 2);
+            out_buf += 2;
+            memcpy(out_buf, &d.y, 2);
+            out_buf += 2;
+            memcpy(out_buf, &d.w, 2);
+            out_buf += 2;
+            memcpy(out_buf, &d.h, 2);
+            out_buf += 2;
+            *out_buf = (uint8_t)(d.prob * 100);
+            out_buf += 1;
+
+            count++;
+
+            // draw_box(buf_mat, d, Bgr, &info, 1, 0);
+            // cv::imshow("img", buf_mat);
+            // cv::waitKey();
+        }
+    }
+    // std::cout << "detect_img_data size=" << detection.size() << std::endl;
+
+    return count;
 }
 
 extern "C" LIB_API int set_color(ColorInfoValue *data, int count)
